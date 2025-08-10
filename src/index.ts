@@ -414,11 +414,18 @@ async function handleToolsList(parentId: number | string) {
       if (orig) {
         const childKey = getChildKey(child);
         const newName = `${childKey}__${orig}`;
-        if (!toolToChild.has(newName)) toolToChild.set(newName, { child, orig });
-        else logDebug(`Duplicate tool name '${newName}' ignored`);
-        (t as any).name = newName;
+        if (!toolToChild.has(newName)) {
+          toolToChild.set(newName, { child, orig });
+          (t as any).name = newName;
+          merged.push(t);
+        } else {
+          logDebug(`Duplicate tool name '${newName}' ignored`);
+          // First occurrence wins; skip pushing duplicate into merged
+        }
+      } else {
+        // No valid name; include as-is to avoid data loss
+        merged.push(t);
       }
-      merged.push(t);
     }
   }
   let payload = { tools: merged } as any;
