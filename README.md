@@ -1,26 +1,27 @@
 Codex MCP Wrapper (TypeScript)
 
-MCP Server Wrapper for Codex CLI by addressing the unstable aspects of the Codex CLI MCP Server: This implementation introduces improvements in reliability, error handling, and performance while maintaining compatibility with existing Codex CLI workfl
+MCP Server Wrapper for the Codex CLI. This wrapper focuses on smoothing over unstable MCP server behaviors to improve reliability, error handling, and performance, while preserving compatibility with existing Codex CLI workflows.
 
-$1- Codex 単独起動時に表面化しやすいエラー（spawn 失敗、MCP 側の JSON-RPC エラーなど）を、読みやすい一行メッセージ＋標準化データ構造へ正規化します。
+Key improvements
+- Normalize common Codex-only failure modes (e.g., spawn failures, JSON‑RPC errors from MCP) into concise one‑line messages with a consistent error data shape.
 
-マルチサーバー集約（新機能）
-- `~/.codex/.mcp.json` に記載された「すべての」MCP サーバーを同時に起動し、1 つの MCP として Codex に見せます。
-- Codex からの `tools/list` には、各サーバーのツールを結合して返します（重複名は先勝ち）。
-- `tools/call` はツール名で適切な子サーバーへルーティングします（ツール名は変更しません）。
-- ツール名は `server_name__tool_name` に付け替えます（例: 子サーバー `serena` の `list_dir` は `serena__list_dir`）。Codex 側でのサーバー名プレフィックスは `mcp__` に統一されるため、最終的なツール名は `mcp__serena__list_dir` になります。
-- `MCP_WRAPPER_SERVER_NAME` を設定すると、そのサーバーだけを起動します（従来互換）。
+Multi‑server aggregation
+- Launches all MCP servers listed in `~/.codex/.mcp.json` in parallel and presents them to Codex as a single MCP server.
+- Answers `tools/list` by merging tools from each server (first match wins on duplicate names).
+- Routes `tools/call` to the correct child server based on the tool name.
+- Rewrites tool names to `server_name__tool_name` (example: child server `serena` tool `list_dir` becomes `serena__list_dir`). Codex applies the server prefix `mcp__`, so tools appear as `mcp__serena__list_dir`.
+- Set `MCP_WRAPPER_SERVER_NAME` to start only the named server (single‑server mode).
 
-デフォルトの設定読み込み
-- 既定では `~/.codex/.mcp.json` を読み込み、そこから MCP サーバーを起動します。
-- さらに、カレントディレクトリからファイルシステムのルートまで `.mcp.json` を上方向に探索します（例: リポジトリ直下の `./.mcp.json`）。
-- 環境変数 `CODEX_MCP_WRAPPER_CONFIG` で明示的にパスを指定可能です。
-- 明示的にサーバーコマンドを渡したい場合は、`--` 以降にコマンドを指定できます（この場合は単一サーバーモード）。
+Config discovery (defaults)
+- Reads `~/.codex/.mcp.json` by default and boots MCP servers from there.
+- Also searches upward from the current directory to filesystem root for `.mcp.json` (e.g., a repo‑level `./.mcp.json`).
+- You can override the config file path with `CODEX_MCP_WRAPPER_CONFIG`.
+- To pass an explicit server command, run this wrapper with `-- <server> <args...>` to use single‑server passthrough mode.
 
-使い方（2通り）
-1) パススルー（明示コマンド指定）
-- Codex 側の `mcp_servers.<name>` にこのラッパーを設定し、`--` 以降に実サーバーの起動コマンドを渡します。
-- 例（Serena をラップする場合／`~/.codex/config.toml`）：
+Usage (two modes)
+1) Passthrough (explicit command)
+- Configure this wrapper under `mcp_servers.<name>` on the Codex side and pass the real server command after `--`.
+- Example (wrapping Serena in `~/.codex/config.toml`):
 
   [mcp_servers.serena]
   command = "npx"
@@ -28,76 +29,73 @@ $1- Codex 単独起動時に表面化しやすいエラー（spawn 失敗、MCP 
            "uvx","--from","git+https://github.com/oraios/serena",
            "serena-mcp-server","--context","ide-assistant","--project","/path/to/project"]
 
-2) 設定ファイルモード（デフォルト）
-- ラッパーを `--` なしで起動すると、`~/.codex/.mcp.json`（環境変数 `CODEX_MCP_WRAPPER_CONFIG` で変更可）を読み込みます。
-- `MCP_WRAPPER_SERVER_NAME` を指定しない場合、記載されたすべてのサーバーを並列に起動し、ツールを集約します。
-- 対応する JSON 形状（ベストエフォート）：
+2) Config file mode (default)
+- When started without `--`, the wrapper reads `~/.codex/.mcp.json` (override with `CODEX_MCP_WRAPPER_CONFIG`).
+- If `MCP_WRAPPER_SERVER_NAME` is not set, it launches all listed servers in parallel and aggregates their tools.
+- Accepts the following JSON shapes (best‑effort):
   - { "servers": { "name": { "command", "args", "env" } } }
-  - { "mcp_servers": { "name": { "command", "args", "env" } } }（スネークケース）
-  - { "mcpServers": { "name": { "command", "args", "env" } } }（キャメルケース）
+  - { "mcp_servers": { "name": { "command", "args", "env" } } } (snake_case)
+  - { "mcpServers": { "name": { "command", "args", "env" } } } (camelCase)
   - [ { "name?", "command", "args", "env" } ]
   - { "command", "args", "env" }
 
-エラー正規化（Codex向け）
-- 変換対象：
-  - 子MCPが返す JSON-RPC エラー（特に `tools/call`）
-  - 子プロセスの spawn 失敗（例: `ENOENT`）
-- 返却形式（JSON-RPC errorの `data` を標準化）：
+Error normalization (for Codex)
+- Normalizes:
+  - JSON‑RPC errors from child MCPs (especially `tools/call`).
+  - Child process spawn failures (e.g., `ENOENT`).
+- Returns JSON‑RPC errors with a standardized `data` shape:
   - `data.kind`: `tool_error` | `server_error` | `spawn_error`
   - `data.retryable`: true/false
   - `data.toolName` / `data.serverName` / `data.original`
-- 代表マッピング：
-  - `-32601` → `Method not found`（server_error, retryable:false）
-  - `-32602` → `Invalid params`（server_error, retryable:false）
-  - `-32603` → `Internal error`（server_error, retryable:true）
-  - `-32000..-32099` → `Server error`（retryable は元データを参照）
-  - `ENOENT` → `Spawn error`: `command not found. Check PATH or use 'npx tsx ...'`（spawn_error, retryable:false）
-- メッセージ整形：
-  - ユーザー向けに一行で要約されます。詳細は `data.original` に保持（`DEBUG=1` で参照推奨）。
-- トグル：
-  - `WRAPPER_ERROR_PASSTHROUGH=1` または `true` で正規化を無効化し、子のエラーをそのまま返します。
+- Representative mappings:
+  - `-32601` → `Method not found` (server_error, retryable:false)
+  - `-32602` → `Invalid params` (server_error, retryable:false)
+  - `-32603` → `Internal error` (server_error, retryable:true)
+  - `-32000..-32099` → `Server error` (retryable inferred from original)
+  - `ENOENT` → `Spawn error`: `command not found. Check PATH or use 'npx tsx ...'` (spawn_error, retryable:false)
+- Message shaping:
+  - Produces a one‑line summary suitable for users. Full details are preserved in `data.original` (enable `DEBUG=1` to see logs).
+- Toggle:
+  - Set `WRAPPER_ERROR_PASSTHROUGH=1` or `true` to disable normalization and return child errors as‑is.
 
-なぜ必要か
-- Codex CLI の「MCP → OpenAI ツール」変換が `type: "integer"` を受け付けない、あるいは `type` を必須扱いすることがあり、以下のようなエラーを誘発します：
+Why this exists
+- In Codex CLI, the MCP→OpenAI tools conversion sometimes rejects `type: "integer"` or requires `type`, causing errors like:
   - `unknown variant "integer", expected one of "boolean", "string", "number", "array", "object"`
   - `missing field "type"`
-- 本ラッパーは `tools/list` の応答（ツール定義）だけを正規化し、Codex に読み込ませます。ツール呼び出しのペイロード自体は変更しません。
+- This wrapper only normalizes the `tools/list` response (tool definitions) so Codex can load them. It does not change the payloads of tool calls.
 
-仕組み
-- JSON-RPC 2.0（LSP 互換の Content-Length フレーミング）で stdio を中継します。
-- `tools/list` は各サーバーへ並列に問い合わせ、`tools` 配列を結合して 1 つの応答として返します。
-- `tools/call` はツール名 → 子プロセスへの対応表でルーティングします。
-- 正規化内容：
-  - `"integer"` → `"number"`（`type` が配列の場合も含む）
-  - `type` 欠落時はヒューリスティックで補完：
-    - `enum` があれば先頭要素の型から推定
-    - `properties` があれば `object`
-    - `items` があれば `array`
-    - それ以外は `string`
-- `properties` / `items` / `anyOf` / `oneOf` / `allOf` / `$defs` / `definitions` など、スキーマの入れ子を再帰的に処理します。
+How it works
+- Relays stdio using JSON‑RPC 2.0 (LSP‑compatible Content‑Length framing) and supports NDJSON for robustness.
+- For `tools/list`, queries each server in parallel, merges the `tools` arrays, and returns a single response.
+- For `tools/call`, routes to the child process mapped from the tool name.
+- Normalization includes:
+  - `"integer"` → `"number"` (also when `type` is an array/union)
+  - When `type` is missing, infer heuristically:
+    - If `enum` exists, infer from the first value type
+    - If `properties` exists, use `object`
+    - If `items` exists, use `array`
+    - Otherwise default to `string`
+- Recursively traverses nested schema containers: `properties`, `items`, `anyOf`, `oneOf`, `allOf`, `$defs`, `definitions`, etc.
 
-期待できる効果
-- 既知のエラー（`integer` 未対応、`type` 欠落）を吸収し、Codex CLI でツールを読み込めるようにします。
-- ツール名は `server_name__tool_name` に統一します。Codex 側のサーバープレフィックスは `mcp__` になるため、最終的に `mcp__{server}__{tool}`（例: `mcp__serena__list_dir`）で呼び出せます。
+Benefits
+- Absorbs known issues (`integer` unsupported, missing `type`) so Codex CLI can load tools.
+- Applies a consistent `server_name__tool_name` convention. With Codex’s `mcp__` server prefix, tools are called as `mcp__{server}__{tool}` (e.g., `mcp__serena__list_dir`).
 
-ログ
-- 起動サマリは常時 1 行、標準エラーに出力します（例: `Started 3 child server(s): brave_search, fetch, gcal`）。
-  - 抑止したい場合は `WRAPPER_SUMMARY=0` または `WRAPPER_NO_SUMMARY=1` を設定してください。
-- デバッグ詳細ログは `DEBUG=1` で有効化され、標準エラーに出力します。
-- ツール一覧タイムアウト: `WRAPPER_TOOLS_LIST_TIMEOUT_MS`（既定 4000ms）。応答が遅い子はスキップし、取得できたツールのみを返します。
-- 初期化タイムアウト: `WRAPPER_INIT_TIMEOUT_MS`（既定 4000ms）。時間内に子が応答しない場合、最小の capabilities で即時応答します。
+Logging
+- Always prints a one‑line startup summary to stderr (example: `Started 3 child server(s): brave_search, fetch, gcal`).
+  - To suppress, set `WRAPPER_SUMMARY=0` or `WRAPPER_NO_SUMMARY=1`.
+- Detailed debug logs when `DEBUG=1`, printed to stderr.
+- `tools/list` timeout: `WRAPPER_TOOLS_LIST_TIMEOUT_MS` (default 4000ms). Slow children are skipped; returns tools from responsive servers.
+- `initialize` timeout: `WRAPPER_INIT_TIMEOUT_MS` (default 4000ms). If children do not respond in time, returns minimal capabilities immediately.
 
+Troubleshooting
+- If child server startup fails (e.g., `ERR_MODULE_NOT_FOUND` / `ENOENT`):
+  - Run via `npx tsx scripts/codex-mcp-wrapper/src/index.ts` (or `node --loader tsx`).
+  - Ensure required binaries are on `PATH` (`tsx`/`uvx`/`python`/`docker`, etc.).
+  - Verify `CODEX_MCP_WRAPPER_CONFIG` points to a valid `.mcp.json`.
+  - To verify a single server, set `MCP_WRAPPER_SERVER_NAME`.
 
-トラブルシュート
-- `ERR_MODULE_NOT_FOUND` / `ENOENT` などで子サーバー起動に失敗する場合：
-  - `npx tsx scripts/codex-mcp-wrapper/src/index.ts` で起動（もしくは `node --loader tsx`）。
-  - `PATH` に `tsx`/`uvx`/`python`/`docker` など必要なバイナリがあるか確認。
-  - `CODEX_MCP_WRAPPER_CONFIG` が正しい `.mcp.json` を指すか確認。
-  - 単一サーバーで検証する場合は `MCP_WRAPPER_SERVER_NAME` を設定。
-
-
-
-開発メモ
-- ソースは `src/` 配下。実行例：
+Developer notes
+- Sources are under `src/`. Example run:
   - `npx tsx scripts/codex-mcp-wrapper/src/index.ts -- <server> <args...>`
-- このラッパーは保守的に設計されており、基本は透過中継です。集約・正規化の対象は `tools/list` と `tools/call` のルーティングおよびエラー整形です。
+- The wrapper is intentionally conservative; default behavior is pass‑through. Aggregation and normalization apply to `tools/list`, routing and error shaping apply to `tools/call`.

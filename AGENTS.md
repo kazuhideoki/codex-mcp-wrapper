@@ -2,7 +2,7 @@
 
 ## Communication
 
-- Answer in the language of the user's
+- Answer in the language of the user's one
 
 ## Project Structure & Modules
 - `src/`: TypeScript sources
