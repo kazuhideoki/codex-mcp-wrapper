@@ -1,4 +1,4 @@
-import { Readable, Writable } from 'node:stream';
+import { Readable } from 'node:stream';
 
 export type JsonRpcMessage = any; // Request, Response, or Notification
 
@@ -6,7 +6,6 @@ export class JsonRpcStdio {
   private inBuf: Buffer = Buffer.alloc(0);
   constructor(
     private readonly input: Readable,
-    private readonly output: Writable,
     private readonly onMessage: (msg: JsonRpcMessage) => void,
   ) {
     input.on('data', (chunk: Buffer) => this.onData(chunk));
@@ -67,11 +66,5 @@ export class JsonRpcStdio {
         );
       }
     }
-  }
-
-  public send(msg: JsonRpcMessage) {
-    // NDJSON output (one line per message)
-    const line = Buffer.from(JSON.stringify(msg) + '\n', 'utf8');
-    this.output.write(line);
   }
 }

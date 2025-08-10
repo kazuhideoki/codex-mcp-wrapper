@@ -22,6 +22,16 @@ const ERROR_PASSTHROUGH =
   process.env.WRAPPER_ERROR_PASSTHROUGH === "1" ||
   process.env.WRAPPER_ERROR_PASSTHROUGH === "true";
 
+function minimalInitializeResult(protocolVersion: string) {
+  return {
+    serverInfo: { name: "mcp", version: "0.0.0" },
+    protocolVersion,
+    capabilities: {
+      tools: { listChanged: false },
+    },
+  };
+}
+
 function logDebug(msg: string) {
   if (DEBUG) process.stderr.write(`[mcp-wrapper] ${msg}\n`);
 }
@@ -189,7 +199,7 @@ class ChildClient {
     });
 
     // Handle incoming messages from child
-    new JsonRpcStdio(this.proc.stdout, process.stdout, (msg) => {
+    new JsonRpcStdio(this.proc.stdout, (msg) => {
       // Responses for our internal requests
       if (
         msg &&
@@ -506,7 +516,7 @@ function main() {
   }
 
   // Parent -> Aggregator
-  new JsonRpcStdio(process.stdin, process.stdout, (msg) => {
+  new JsonRpcStdio(process.stdin, (msg) => {
     try {
       if (msg && msg.jsonrpc === "2.0" && typeof msg.method === "string") {
         // Record method + params for potential passthrough replies
@@ -519,16 +529,7 @@ function main() {
             if (msg.id == null) return;
             const pver = msg?.params?.protocolVersion || "2024-06-13";
             if (children.length === 0) {
-              // src/index.ts（initialize の timeout / 子ゼロのパス）
-              const minimal = {
-                serverInfo: { name: "mcp", version: "0.0.0" },
-                protocolVersion: pver,
-                capabilities: {
-                  tools: { listChanged: false }, // ← これを必ず付ける
-                },
-              };
-
-              const resp = { jsonrpc: "2.0", id: msg.id, result: minimal };
+              const resp = { jsonrpc: "2.0", id: msg.id, result: minimalInitializeResult(pver) };
               process.stdout.write(encodeFrame(resp));
               return;
             }
@@ -549,19 +550,10 @@ function main() {
               };
               const timer = setTimeout(() => {
                 onSettle(() => {
-                  // src/index.ts（initialize の timeout / 子ゼロのパス）
-                  const minimal = {
-                    serverInfo: { name: "mcp", version: "0.0.0" },
-                    protocolVersion: pver,
-                    capabilities: {
-                      tools: { listChanged: false }, // ← これを必ず付ける
-                    },
-                  };
-
                   const resp = {
                     jsonrpc: "2.0",
                     id: parentId,
-                    result: minimal,
+                    result: minimalInitializeResult(pver),
                   };
                   process.stdout.write(encodeFrame(resp));
                   logDebug(
