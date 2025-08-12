@@ -7,8 +7,7 @@
     "codex-mcp-wrapper": "src/index.ts"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "npx tsx src/index.ts",
     "dev": "DEBUG=1 tsx src/index.ts"
   }
 }
-

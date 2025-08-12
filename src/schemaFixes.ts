@@ -67,8 +67,12 @@ export function normalizeSchema(schema: Json, debug = false): Json {
         if (debug) console.error(`[mcp-wrapper] ${path}.type: union ${JSON.stringify(before)} -> 'string' (fallback)`);
       }
     } else if (node.type == null) {
-      // Avoid forcing a type when $ref is present; many validators dislike mixing them.
-      if (!node.$ref) {
+      // Heuristic: if this is the root and it only has a $ref, many consumers still
+      // require a concrete 'type'. Assume an object to satisfy OpenAI tools params.
+      if (node.$ref && path === '$') {
+        node.type = 'object';
+        if (debug) console.error(`[mcp-wrapper] ${path}.type: added default 'object' for $ref root`);
+      } else if (!node.$ref) {
         const inferred = inferType(node);
         if (inferred) {
           node.type = inferred;
