@@ -63,6 +63,15 @@ args = [
 - Toggle:
   - Set `WRAPPER_ERROR_PASSTHROUGH=1` or `true` to disable normalization and return child errors as‑is.
 
+## Schema Normalization Toggle
+- The wrapper can normalize tool schemas returned by `tools/list` (e.g., fix `integer` → `number`, add missing `type`). If Codex no longer needs this, disable it with a single CLI flag:
+  - CLI flag: `--no-schema-normalization` (place before `--` when using passthrough)
+  - When disabled, the wrapper returns tool definitions as‑is from child servers (still prefixing tool names and merging across servers).
+
+Example
+- Config mode: `npm run start -- --no-schema-normalization`
+- Passthrough: `npx tsx src/index.ts --no-schema-normalization -- <server> <args...>`
+
 ## Why This Exists
 - In Codex CLI, the MCP→OpenAI tools conversion sometimes rejects `type: "integer"` or requires `type`, causing errors like:
   - `unknown variant "integer", expected one of "boolean", "string", "number", "array", "object"`

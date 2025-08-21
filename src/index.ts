@@ -16,6 +16,16 @@ type ServerSpec = {
 type Json = any;
 
 const DEBUG = !!process.env.DEBUG;
+// Wrapper flag: single CLI flag to disable schema normalization/transforms
+function parseWrapperFlags() {
+  const idx = process.argv.indexOf("--");
+  const argv = process.argv.slice(2, idx >= 0 ? idx : undefined);
+  const set = new Set(argv);
+  const disabledViaArg = set.has("--no-schema-normalization");
+  return { disableSchemaNormalization: disabledViaArg } as const;
+}
+const { disableSchemaNormalization: SCHEMA_NORMALIZATION_DISABLED } =
+  parseWrapperFlags();
 const SUMMARY_DISABLED =
   process.env.WRAPPER_SUMMARY === "0" || process.env.WRAPPER_NO_SUMMARY === "1";
 const ERROR_PASSTHROUGH =
@@ -429,7 +439,11 @@ async function handleToolsList(parentId: number | string) {
     }
   }
   let payload = { tools: merged } as any;
-  payload = normalizeToolsListResult(payload, DEBUG);
+  if (!SCHEMA_NORMALIZATION_DISABLED) {
+    payload = normalizeToolsListResult(payload, DEBUG);
+  } else if (DEBUG) {
+    logDebug("Schema normalization disabled; returning tools as-is");
+  }
   const resp = { jsonrpc: "2.0", id: parentId, result: payload };
   process.stdout.write(encodeFrame(resp));
 
@@ -517,9 +531,17 @@ function main() {
   if (!SUMMARY_DISABLED) {
     try {
       process.stderr.write(summaryLine + "\n");
+      if (SCHEMA_NORMALIZATION_DISABLED) {
+        process.stderr.write(
+          "[mcp-wrapper] Schema normalization disabled (--no-schema-normalization)\n",
+        );
+      }
     } catch {}
   } else {
     logDebug(summaryLine);
+    if (SCHEMA_NORMALIZATION_DISABLED) {
+      logDebug("Schema normalization disabled (--no-schema-normalization)");
+    }
   }
 
   // Parent -> Aggregator
